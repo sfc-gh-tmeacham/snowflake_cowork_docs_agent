@@ -546,7 +546,7 @@ FROM $1 as t;
 -- ║  SECTION 4: ADD AGENT TO SNOWFLAKE COWORK                                    ║
 -- ╠══════════════════════════════════════════════════════════════════════════════╣
 -- ║  Purpose: Register the agent with the Snowflake CoWork object so it          ║
--- ║           appears in the CoWork interface for all users.                      ║
+-- ║           appears in the CoWork interface for all users.                     ║
 -- ║                                                                              ║
 -- ║  Note: If a Snowflake CoWork object exists in the account, agents must be    ║
 -- ║        explicitly added to it to be visible. If no CoWork object exists,     ║
