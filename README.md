@@ -12,7 +12,7 @@ Every Snowflake team has the same friction: users searching docs, opening suppor
 
 - **Instant, accurate answers** grounded exclusively in official Snowflake documentation — no hallucination, no outdated blog posts
 - **Account-wide access** — every user sees the agent in [Snowflake CoWork](https://ai.snowflake.com) with zero per-user configuration
-- **Structured, actionable responses** — every answer includes runnable code examples, access control details, and citations to source docs
+- **Structured, actionable responses** — every answer includes runnable code examples and access control details when relevant
 - **Reduces support load** — fewer internal tickets, less context-switching for senior engineers, faster onboarding for new team members
 - **Always current** — powered by Snowflake's official Cortex Knowledge Extension, which stays in sync with documentation updates
 
@@ -29,7 +29,7 @@ Every Snowflake team has the same friction: users searching docs, opening suppor
 The `SETUP.sql` script creates a fully functional Cortex Agent named **Snowflake Docs Agent** (persona: "Snowflake Sherpa") that:
 
 - Answers Snowflake questions using only official documentation (no hallucination)
-- Provides structured responses with code examples, access control details, and follow-up questions
+- Provides structured responses with code examples and access control details when relevant
 - Is accessible to all users in your account via Snowflake CoWork
 
 ## Architecture
@@ -64,7 +64,7 @@ The `SETUP.sql` script creates a fully functional Cortex Agent named **Snowflake
 |---------|---------|
 | **1. Configure Account & Create Database** | Validates cross-region inference, creates `SNOWFLAKE_DOCS_AGENT` database and `AGENTS` schema |
 | **2. Install Cortex Knowledge Extension** | Installs the Snowflake Documentation CKE from the Marketplace (listing `GZSTZ67BY9OQ4`) |
-| **3. Create & Deploy Agent** | Creates the agent with persona, instructions, guardrails, and Cortex Search tool |
+| **3. Create & Deploy Agent** | Creates the agent (if not exists), updates live version with full spec, commits as immutable version |
 | **3a. Grant Access & Validate** | Grants USAGE to PUBLIC, validates grants, inspects agent configuration |
 | **4. Add Agent to Snowflake CoWork** | Registers the agent with the CoWork object for UI visibility |
 | **Post-Execution** | Outputs account identifier, CoWork URL, and agent deep link |
@@ -120,6 +120,83 @@ Or navigate to [ai.snowflake.com](https://ai.snowflake.com) and select **Snowfla
 
 > **Note:** CoWork initializes sessions with the user's default role and warehouse. Ensure all users have these set before sharing the link.
 
+## Testing the Agent
+
+After deployment, test the agent directly via SQL using [`DATA_AGENT_RUN`](https://docs.snowflake.com/en/sql-reference/functions/data_agent_run-snowflake-cortex):
+
+```sql
+SELECT SNOWFLAKE.CORTEX.DATA_AGENT_RUN(
+    'SNOWFLAKE_DOCS_AGENT.AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT',
+    '{"messages": [{"role": "user", "content": [{"type": "text", "text": "How do I create a Dynamic Table?"}]}]}'
+);
+```
+
+Or parse the response for readability:
+
+```sql
+SELECT TRY_PARSE_JSON(
+    SNOWFLAKE.CORTEX.DATA_AGENT_RUN(
+        'SNOWFLAKE_DOCS_AGENT.AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT',
+        '{"messages": [{"role": "user", "content": [{"type": "text", "text": "What is Snowpipe Streaming and how do I set it up?"}]}]}'
+    )
+) AS response;
+```
+
+## Version History
+
+The script uses agent versioning — each run commits an immutable snapshot. To list all committed versions:
+
+```sql
+SHOW VERSIONS IN AGENT SNOWFLAKE_DOCS_AGENT.AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT;
+```
+
+To roll back to a previous version, set it as the default:
+
+```sql
+ALTER AGENT SNOWFLAKE_DOCS_AGENT.AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT
+    SET DEFAULT VERSION = 'VERSION$3';
+```
+
+## Observability
+
+Query the agent's execution logs to see which topics are searched most frequently:
+
+```sql
+WITH searches AS (
+    SELECT
+        RECORD_ATTRIBUTES:"snow.ai.observability.agent.tool.cortex_search.query"::STRING AS search_query,
+        RECORD_ATTRIBUTES:"snow.ai.observability.agent.tool.cortex_search.duration"::NUMBER AS duration_ms
+    FROM TABLE(SNOWFLAKE.LOCAL.GET_AI_OBSERVABILITY_EVENTS(
+        'SNOWFLAKE_DOCS_AGENT',
+        'AGENTS',
+        'SNOWFLAKE_DOCUMENTATION_AGENT',
+        'CORTEX AGENT'
+    ))
+    WHERE RECORD:name::STRING = 'CortexSearchService_Snowflake_Documentation_Tool'
+)
+SELECT
+    search_query,
+    duration_ms
+FROM searches
+ORDER BY duration_ms DESC;
+```
+
+Or view all event types to understand the agent's reasoning steps:
+
+```sql
+SELECT
+    RECORD:name::STRING AS event_name,
+    COUNT(*) AS count
+FROM TABLE(SNOWFLAKE.LOCAL.GET_AI_OBSERVABILITY_EVENTS(
+    'SNOWFLAKE_DOCS_AGENT',
+    'AGENTS',
+    'SNOWFLAKE_DOCUMENTATION_AGENT',
+    'CORTEX AGENT'
+))
+GROUP BY event_name
+ORDER BY count DESC;
+```
+
 ## Troubleshooting
 
 | Issue | Solution |
@@ -128,6 +205,7 @@ Or navigate to [ai.snowflake.com](https://ai.snowflake.com) and select **Snowfla
 | Marketplace listing not available | Run `CALL SYSTEM$REQUEST_LISTING_AND_WAIT('GZSTZ67BY9OQ4', 0);` |
 | "Agent already present" error | Safe to ignore -- the script handles this with exception handling |
 | "Role doesn't include access" on deep link | Ensure USAGE is granted on the database, schema, and agent to the user's role |
+| "Version 'live' not found" | Run `ALTER AGENT AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT ADD LIVE VERSION FROM LAST;` |
 
 ## License
 

@@ -509,6 +509,9 @@ alias for stable deployments. Previous committed versions are preserved for roll
 */
 ALTER AGENT AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT COMMIT COMMENT = 'Updated agent specification';
 
+-- Recreate the live version from the latest commit so the Snowsight test UI remains functional.
+ALTER AGENT AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT ADD LIVE VERSION FROM LAST;
+
 -- ╔══════════════════════════════════════════════════════════════════════════════╗
 -- ║  SECTION 3a: GRANT ACCESS & VALIDATE                                         ║
 -- ╠══════════════════════════════════════════════════════════════════════════════╣
