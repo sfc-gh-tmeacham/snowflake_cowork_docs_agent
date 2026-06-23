@@ -14,7 +14,8 @@ Every Snowflake team has the same friction: users searching docs, opening suppor
 - **Account-wide access** — every user sees the agent in [Snowflake CoWork](https://ai.snowflake.com) with zero per-user configuration
 - **Structured, actionable responses** — every answer includes runnable code examples and access control details when relevant
 - **Reduces support load** — fewer internal tickets, less context-switching for senior engineers, faster onboarding for new team members
-- **Always current** — powered by Snowflake's official Cortex Knowledge Extension, which stays in sync with documentation updates
+- **Always current** — powered by the free [Snowflake Documentation Cortex Knowledge Extension](https://app.snowflake.com/marketplace/listing/GZSTZ67BY9OQ4/snowflake-snowflake-documentation) from the Snowflake Marketplace, which stays in sync with official documentation updates
+- **Zero cost to install** — the knowledge extension is free and maintained by Snowflake; you only pay for compute when querying the agent
 
 ## Who Is This For
 
