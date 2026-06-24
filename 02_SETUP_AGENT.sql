@@ -1,48 +1,31 @@
 /*
 ====================================================================================================
-File Name: setup_snowflake_docs_agent.sql
+File Name: 02_SETUP_AGENT.sql
 ====================================================================================================
 Author:      Tom Meacham
 Create Date: 2025-08-18
 Last Updated: 2026-06-23
 Version:     1.1
-Description: This script performs a complete, end-to-end setup for a Snowflake expert AI agent
-             named "Snowflake Docs Agent". The agent is configured to use the official Snowflake
-             documentation as its exclusive knowledge base, ensuring accurate and context-aware
-             answers. This script must be run by a user with the ACCOUNTADMIN role.
+Description: This script creates and deploys the "Snowflake Docs Agent" Cortex Agent, then
+             registers it with Snowflake CoWork for account-wide visibility. Run this script
+             after 01_SETUP_ENVIRONMENT.sql has completed successfully.
 
 Prerequisites:
+  - 01_SETUP_ENVIRONMENT.sql has been executed successfully
   - ACCOUNTADMIN role (or equivalent privileges)
-  - Access to the Snowflake Marketplace (org must have accepted marketplace terms)
-  - A warehouse available for the executing user
-  - Cross-region inference enabled (or willingness to enable it for model availability)
+  - SNOWFLAKE_DOCS_AGENT database and AGENTS schema exist
+  - SNOWFLAKE_DOCUMENTATION database is imported and accessible
 
 Objects Created:
-  Databases:
-    - SNOWFLAKE_DOCS_AGENT          — Hosts the agent and its schema
-    - SNOWFLAKE_DOCUMENTATION       — Imported from Marketplace listing (read-only shared data)
-  Schemas:
-    - SNOWFLAKE_DOCS_AGENT.AGENTS   — Contains the agent object
   Agents:
     - SNOWFLAKE_DOCS_AGENT.AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT
   Snowflake CoWork Object:
     - SNOWFLAKE_INTELLIGENCE_OBJECT_DEFAULT (account-level, manages agent visibility)
   Grants:
-    - USAGE on SNOWFLAKE_DOCS_AGENT (database) → PUBLIC
-    - USAGE on SNOWFLAKE_DOCS_AGENT.AGENTS (schema) → PUBLIC
-    - IMPORTED PRIVILEGES on SNOWFLAKE_DOCUMENTATION → PUBLIC
     - USAGE on SNOWFLAKE_DOCUMENTATION_AGENT (agent) → PUBLIC
-    - DATABASE ROLE SNOWFLAKE.CORTEX_AGENT_USER → PUBLIC
     - USAGE on SNOWFLAKE_INTELLIGENCE_OBJECT_DEFAULT → PUBLIC
 
 Script Sections:
-  1. Configure Account & Create Agent Database:
-     - Validates cross-region inference settings for model availability.
-     - Creates the SNOWFLAKE_DOCS_AGENT database and `agents` schema to host the agent.
-  2. Install Snowflake Documentation Cortex Extension:
-     - Installs the "Snowflake Documentation Cortex Knowledge Extension" Native App from the
-       Snowflake Marketplace. This creates the `SNOWFLAKE_DOCUMENTATION` database, which serves
-       as the vectorized knowledge base for the agent.
   3. Create and Deploy the Snowflake Docs Agent:
      - Creates the `SNOWFLAKE_DOCUMENTATION_AGENT` agent if it doesn't already exist (preserves
        version history on re-runs).
@@ -51,13 +34,13 @@ Script Sections:
      - Commits the live version as an immutable snapshot (VERSION$N) for stable deployment.
      - Connects the agent to the Cortex Search service
        (`SNOWFLAKE_DOCUMENTATION.SHARED.CKE_SNOWFLAKE_DOCS_SERVICE`) for documentation retrieval.
-      - Grants USAGE on the agent to the PUBLIC role, making it accessible account-wide.
+     - Grants USAGE on the agent to the PUBLIC role, making it accessible account-wide.
   4. Add Agent to Snowflake CoWork:
      - Creates the Snowflake CoWork object (SNOWFLAKE_INTELLIGENCE_OBJECT_DEFAULT) if it
        doesn't already exist.
      - Adds the agent to the CoWork object so it appears in the CoWork interface.
      - Grants USAGE on the CoWork object to PUBLIC for account-wide visibility.
-Post-Execution:
+  Post-Execution:
      - Upon successful completion, the "Snowflake Docs Agent" will be available for use in the
        Snowflake CoWork interface (https://ai.snowflake.com). The final query in this
        script provides the specific URL for your account.
@@ -66,216 +49,8 @@ Post-Execution:
 
 -- Use the ACCOUNTADMIN role to ensure sufficient permissions for all setup tasks.
 USE ROLE ACCOUNTADMIN;
-
--- Define the database name for the agent.
--- To change it, find and replace SNOWFLAKE_DOCS_AGENT throughout this script.
-
-
--- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║  SECTION 1: CONFIGURE ACCOUNT & CREATE AGENT DATABASE                        ║
--- ╠══════════════════════════════════════════════════════════════════════════════╣
--- ║  Purpose: Validate cross-region inference and create the database/schema     ║
--- ║           that will host the Snowflake Docs Agent.                            ║
--- ║                                                                              ║
--- ║  Docs: https://docs.snowflake.com/en/user-guide/snowflake-cortex/snowflake-cowork
--- ╚══════════════════════════════════════════════════════════════════════════════╝
-
-/*
-====================================================================================================
-Step 1.1: Check cross-region inference status
-====================================================================================================
-Snowflake CoWork routes to models like Claude Sonnet 4.5, Claude Sonnet 4.6, and GPT-4.1,
-depending on regional availability. The agent spec uses "auto" which automatically selects
-the best available model.
-
-References:
-Cross-Region Inference: https://docs.snowflake.com/en/user-guide/snowflake-cortex/cross-region-inference
-====================================================================================================
-*/
-SHOW PARAMETERS LIKE 'CORTEX_ENABLED_CROSS_REGION' IN ACCOUNT ->>
-SELECT
-    STRTOK_TO_ARRAY("value") as key_value,
-    IFF(
-        ARRAY_CONTAINS( 'DISABLED'::variant , key_value),
-        '⚠️ Cross Region Inference is disabled, depending on your CSP region, you are likely to experience issues.',
-        '✅ Cross Region Inference is enabled with these settings: ' || "value"
-        ) as validation,
-    cecr.* exclude "value",
-FROM $1 as cecr;
-
-/*
-====================================================================================================
--- Below are the options for this parameter, they must be set by an accountadmin.
--- Values can be comma-combined (e.g., 'AWS_US,AZURE_US'). Choose the broadest
--- setting that meets your data residency requirements.
-====================================================================================================
-*/
-
--- Cloud-wide (recommended — covers all regions within a cloud provider)
--- ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'AWS_GLOBAL';
--- ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'AZURE_GLOBAL';
--- ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'GCP_GLOBAL';
-
--- Regional (restrict to specific cloud regions)
--- ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'AWS_US';
--- ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'AWS_EU';
--- ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'AWS_APJ';
--- ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'AZURE_US';
--- ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'AZURE_EU';
-
--- Multi-cloud combination example
--- ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'AWS_US,AZURE_US';
-
--- Maximum flexibility (all regions, all clouds)
--- ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
-
-
-/*
-====================================================================================================
-Create a database. This holds the configuration object and the other objects used to support
-Snowflake CoWork.
-====================================================================================================
-*/
-CREATE DATABASE IF NOT EXISTS SNOWFLAKE_DOCS_AGENT
-    COMMENT = 'Houses the Snowflake Docs Agent and its supporting objects.';
-GRANT USAGE ON DATABASE SNOWFLAKE_DOCS_AGENT TO ROLE PUBLIC;
-
-/*
-====================================================================================================
-After you set up the agent database, use the following SQL commands to create a
-schema to store the agents and make them discoverable to everyone.
-====================================================================================================
-*/
-CREATE SCHEMA IF NOT EXISTS SNOWFLAKE_DOCS_AGENT.AGENTS
-    COMMENT = 'Schema for Snowflake CoWork agents deployed from this database.';
-GRANT USAGE ON SCHEMA SNOWFLAKE_DOCS_AGENT.AGENTS TO ROLE PUBLIC;
-
-
-/*
-====================================================================================================
-Grant the CREATE AGENT privilege on the agents schema to any role that should be able to create
-agents for Snowflake CoWork.
-====================================================================================================
-*/
--- GRANT CREATE AGENT ON SCHEMA SNOWFLAKE_DOCS_AGENT.AGENTS TO ROLE <role>;
-
-/*
-====================================================================================================
-Note: To use Snowflake CoWork, a user needs the SNOWFLAKE.CORTEX_AGENT_USER database role
-(grants access to Cortex Agents only) or the broader SNOWFLAKE.CORTEX_USER role (grants access
-to all Cortex AI features). By default, CORTEX_USER is granted to the PUBLIC role, so all users
-have access out of the box. If you have a custom configuration, take that into account.
-====================================================================================================
-*/
-GRANT DATABASE ROLE SNOWFLAKE.CORTEX_AGENT_USER TO ROLE PUBLIC;
-
-
--- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║  SECTION 2: INSTALL SNOWFLAKE DOCUMENTATION CORTEX EXTENSION                 ║
--- ╠══════════════════════════════════════════════════════════════════════════════╣
--- ║  Purpose: Install the "Snowflake Documentation Cortex Knowledge Extension"   ║
--- ║           Native App from the Marketplace. This creates the                  ║
--- ║           SNOWFLAKE_DOCUMENTATION database — the vectorized knowledge base   ║
--- ║           that powers the agent's Cortex Search tool.                        ║
--- ║                                                                              ║
--- ║  Listing: GZSTZ67BY9OQ4                                                      ║
--- ║  Docs: https://docs.snowflake.com/en/user-guide/snowflake-native-apps-about  ║
--- ╚══════════════════════════════════════════════════════════════════════════════╝
-
--- Step 1: Make sure your account has access to the Snowflake Documentation Cortex Knowledge Extension 
-DESCRIBE AVAILABLE LISTING GZSTZ67BY9OQ4 ->>
-SELECT
-    "global_name" as global_name,
-    IFF("is_imported"::boolean, 
-    '⚠️ Shared databases has already been imported. Consider dropping the imported database and recreating it after investigating dependencies.', 
-    '✅ Shared databases has not yet been imported.'
-    ) as share_status,
-    "title" as title,
-    "is_imported"::boolean as is_imported,
-    "is_ready_for_import"::boolean as is_ready_for_import,
-FROM $1;
-
-
-/*
-====================================================================================================
-(Optional) If the listing is already imported, find its local database name
-====================================================================================================
-Run this only if the previous query showed the listing was already imported. You can use this query
-to discover if it has a different name than SNOWFLAKE_DOCUMENTATION.
-====================================================================================================
-*/
-SHOW DATABASES IN ACCOUNT ->>
-SELECT 
-"created_on",
-"name",
-IFF("name" = 'SNOWFLAKE_DOCUMENTATION', 
-    '✅ Good to go.', 
-    '⚠️ Consider renaming this database SNOWFLAKE_DOCUMENTATION or dropping it an reimporting wiht the command in step 3'
-    ) as db_name_status,
-"origin",
-"owner"
-FROM $1 
-WHERE "kind" = 'IMPORTED DATABASE'
-AND "origin" like '%SNOWFLAKE_DOCS_CKE_SNOWFLAKE_SHARE%'
-;
-
-/*
-====================================================================================================
-Step 2: Request the listing to be replicated to your current region
-====================================================================================================
-This is only required if the check in Step 1 showed the listing was not ready.
-====================================================================================================
-*/
-CALL SYSTEM$REQUEST_LISTING_AND_WAIT('GZSTZ67BY9OQ4', 0);
-
-/*
-====================================================================================================
-Note
-====================================================================================================
-If this fails, ensure your ORGANIZATION has accepted the marketplace terms:
-https://other-docs.snowflake.com/en/collaboration/consumer-becoming#accept-the-snowflake-provider-and-consumer-terms
-====================================================================================================
-*/
-
-/*
-====================================================================================================
-Step 3: Create a local database from the shared listing
-====================================================================================================
-This command mounts the shared data as a read-only database in your account.
-====================================================================================================
-*/
-
-CREATE OR REPLACE DATABASE SNOWFLAKE_DOCUMENTATION
-FROM LISTING 'GZSTZ67BY9OQ4'
-COMMENT = 'Snowflake Documentation - Cortex Knowledge Extension - Updates Weekly';
-
--- validation
-SHOW DATABASES LIKE 'SNOWFLAKE_DOCUMENTATION';
-DESCRIBE DATABASE SNOWFLAKE_DOCUMENTATION;
-
-/*
-====================================================================================================
-Step 4: Grant usage privileges to all roles
-====================================================================================================
-'IMPORTED PRIVILEGES' is a meta-privilege required for other roles to access objects within a
-database created from a share.
-====================================================================================================
-*/
-GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE_DOCUMENTATION TO ROLE public;
-
-/*
-====================================================================================================
-Validation: Verify the PUBLIC role has the necessary IMPORTED PRIVILEGES grant
-====================================================================================================
-*/
-SHOW GRANTS ON DATABASE SNOWFLAKE_DOCUMENTATION ->>
-SELECT 'VALID - IMPORTED PRIVILEGES has been granted to the Public Role' as "success_message"
-FROM $1 
-WHERE "grantee_name" = 'PUBLIC' AND "privilege" = 'IMPORTED PRIVILEGES'
-UNION ALL BY NAME
-SELECT 'INVALID - The PUBLIC role has not been granted IMPORTED PRIVILEGES' as "error_message" 
-FROM $1
-WHERE NOT EXISTS ( SELECT 1 FROM $1 WHERE "grantee_name" = 'PUBLIC' AND "privilege" = 'IMPORTED PRIVILEGES');
+USE DATABASE SNOWFLAKE_DOCS_AGENT;
+USE SCHEMA AGENTS;
 
 -- ╔══════════════════════════════════════════════════════════════════════════════╗
 -- ║  SECTION 3: CREATE AND DEPLOY THE SNOWFLAKE ASSISTANT AGENT                  ║
@@ -293,14 +68,17 @@ WHERE NOT EXISTS ( SELECT 1 FROM $1 WHERE "grantee_name" = 'PUBLIC' AND "privile
 -- ║  Agent: SNOWFLAKE_DOCS_AGENT.AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT            ║
 -- ╚══════════════════════════════════════════════════════════════════════════════╝
 
-USE DATABASE SNOWFLAKE_DOCS_AGENT;
-
 /*
 ====================================================================================================
 Step 3.1: Create the agent (first run only)
 ====================================================================================================
 If the agent doesn't exist, create it with a minimal placeholder spec. The full specification
-is applied in the next step via ALTER AGENT. This preserves version history on subsequent runs.
+is applied in Step 3.4 via ALTER AGENT MODIFY LIVE VERSION.
+
+Why not put the full spec here?
+  - CREATE AGENT does not support IF NOT EXISTS with a changed spec — it would error on re-runs.
+  - By separating CREATE (idempotent) from MODIFY (always applies latest), this script is
+    safely re-runnable without dropping the agent or losing version history.
 ====================================================================================================
 */
 CREATE AGENT IF NOT EXISTS AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT
@@ -334,10 +112,10 @@ for the MODIFY LIVE VERSION step. If it already exists, this safely catches the 
 */
 BEGIN
     ALTER AGENT AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT ADD LIVE VERSION FROM LAST;
+    RETURN 'Live version created from last committed version.';
 EXCEPTION
     WHEN OTHER THEN
-        -- Live version already exists; safe to continue.
-        NULL;
+        RETURN 'Live version already exists; ready for modification in Step 3.4. (' || SQLERRM || ')';
 END;
 
 /*
@@ -505,6 +283,10 @@ Step 3.5: Commit the live version
 ====================================================================================================
 Creates an immutable named version (VERSION$N). This snapshot can be referenced by name or
 alias for stable deployments. Previous committed versions are preserved for rollback.
+
+After committing, the live version is consumed (no longer exists). We immediately recreate it
+so the Snowsight "Test" UI remains functional — without a live version, the test panel shows
+an error.
 ====================================================================================================
 */
 ALTER AGENT AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT COMMIT COMMENT = 'Updated agent specification';
@@ -516,25 +298,29 @@ ALTER AGENT AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT ADD LIVE VERSION FROM LAST;
 -- ║  SECTION 3a: GRANT ACCESS & VALIDATE                                         ║
 -- ╠══════════════════════════════════════════════════════════════════════════════╣
 -- ║  Purpose: Grant usage to PUBLIC, validate grants, and inspect the agent.     ║
+-- ║                                                                              ║
+-- ║  Note: The GRANT is required. The SHOW/DESCRIBE queries below are            ║
+-- ║        informational — they validate the setup but can be skipped on         ║
+-- ║        subsequent runs if desired.                                           ║
 -- ╚══════════════════════════════════════════════════════════════════════════════╝
 
--- Grant usage of this agent to the PUBLIC role
+-- [Required] Grant usage of this agent to the PUBLIC role
 GRANT USAGE ON AGENT AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT TO ROLE PUBLIC;
 
 -- Optionally, grant ownership of this AGENT to another role
 -- GRANT OWNERSHIP ON AGENT AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT TO ROLE <SOME_OTHER_ROLE>;
 
--- Validate grants
+-- [Informational] Validate grants
 SHOW GRANTS ON AGENT AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT;
 
--- List agents in the database
+-- [Informational] List agents in the database
 SHOW AGENTS like 'SNOWFLAKE_DOCUMENTATION_AGENT' in database SNOWFLAKE_DOCS_AGENT ->>
 select * from $1;
 
--- Inspect the agent
+-- [Informational] Inspect the agent
 DESCRIBE AGENT AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT;
 
--- Describe agent with parsed JSON fields
+-- [Informational] Describe agent with parsed JSON fields
 DESCRIBE AGENT AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT ->>
 SELECT 
     * exclude ("profile", "agent_spec"),
@@ -577,10 +363,10 @@ Without this step, the agent would only be accessible via a direct link or Snows
 BEGIN
     ALTER SNOWFLAKE INTELLIGENCE SNOWFLAKE_INTELLIGENCE_OBJECT_DEFAULT
         ADD AGENT SNOWFLAKE_DOCS_AGENT.AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT;
+    RETURN 'Agent added to CoWork object successfully.';
 EXCEPTION
     WHEN OTHER THEN
-        -- Agent is already present in the CoWork object; safe to ignore.
-        NULL;
+        RETURN 'Agent is already present in the CoWork object; safe to continue. (' || SQLERRM || ')';
 END;
 
 /*
@@ -596,6 +382,8 @@ GRANT USAGE ON SNOWFLAKE INTELLIGENCE SNOWFLAKE_INTELLIGENCE_OBJECT_DEFAULT TO R
 SHOW SNOWFLAKE INTELLIGENCES;
 
 
+
+
 -- ╔══════════════════════════════════════════════════════════════════════════════╗
 -- ║  POST-EXECUTION: ACCESS YOUR AGENT                                           ║
 -- ╠══════════════════════════════════════════════════════════════════════════════╣
@@ -604,6 +392,10 @@ SHOW SNOWFLAKE INTELLIGENCES;
 -- ║                                                                              ║
 -- ║  Note: CoWork uses the user's default role and warehouse. Ensure all users   ║
 -- ║        have these set before sharing the link.                               ║
+-- ║                                                                              ║
+-- ║  Note: The agent_direct_url includes db=SNOWFLAKE_DOCS_AGENT and             ║
+-- ║        schema=AGENTS. If you changed the database or schema name earlier,    ║
+-- ║        update these parameters in the URL accordingly.                       ║
 -- ╚══════════════════════════════════════════════════════════════════════════════╝
 SELECT 
 CONCAT(CURRENT_ORGANIZATION_NAME(),'-',CURRENT_ACCOUNT_NAME()) as account_identifier,

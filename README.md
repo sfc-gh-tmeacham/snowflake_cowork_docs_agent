@@ -2,7 +2,9 @@
 
 **Give every user in your Snowflake account an always-available Snowflake expert.**
 
-Deploy in under 5 minutes with a single SQL script. No infrastructure to manage, no per-user setup, no ongoing maintenance.
+Deploy in under 5 minutes with two SQL scripts. No infrastructure to manage, no per-user setup, no ongoing maintenance.
+
+> **New to Cortex Agents?** This is a great first agent to deploy. It's read-only (no access to your data), low risk (grounded exclusively in official docs), and immediately useful to every user in your organization. A safe way to demonstrate the value of Cortex Agents before building custom agents over your own data.
 
 ---
 
@@ -27,7 +29,7 @@ Every Snowflake team has the same friction: users searching docs, opening suppor
 
 ## What It Does
 
-The `SETUP.sql` script creates a fully functional Cortex Agent named **Snowflake Docs Agent** (persona: "Snowflake Sherpa") that:
+Two SQL scripts create a fully functional Cortex Agent named **Snowflake Docs Agent** (persona: "Snowflake Sherpa") that:
 
 - Answers Snowflake questions using only official documentation (no hallucination)
 - Provides structured responses with code examples and access control details when relevant
@@ -46,25 +48,51 @@ The `SETUP.sql` script creates a fully functional Cortex Agent named **Snowflake
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Prerequisites
+## Prerequisites & Permissions
 
-- **Role:** ACCOUNTADMIN
+### Required Roles
+
+| Role | Purpose |
+|------|---------|
+| `ACCOUNTADMIN` | Creates databases, schemas, agents, grants privileges, manages account parameters |
+| `MARKETPLACE_ADMIN` (or ACCOUNTADMIN) | Accepts Marketplace listings and imports shared databases |
+
+> **Note:** Both scripts assume you are running as `ACCOUNTADMIN`. If your account uses a custom role hierarchy, ensure the executing role has: `CREATE DATABASE`, `CREATE AGENT`, `CREATE SNOWFLAKE INTELLIGENCE`, `MANAGE GRANTS`, and `IMPORT SHARE` privileges.
+
+### Warehouse Requirements
+
+- Any active warehouse available to the executing user (needed for running the setup queries)
+- Agent queries at runtime are lightweight — a Small warehouse is sufficient as a default for users
+- If available in your region, [Adaptive Warehouses](https://docs.snowflake.com/en/user-guide/warehouses-adaptive) are ideal as a shared default (auto-scales per query, no sizing/tuning needed)
+
+### Other Requirements
+
 - **Marketplace Access:** Your organization must have accepted the [Snowflake Marketplace terms](https://other-docs.snowflake.com/en/collaboration/consumer-becoming#accept-the-snowflake-provider-and-consumer-terms)
-- **Warehouse:** Any warehouse available to the executing user
-- **Cross-Region Inference:** Enabled (or willingness to enable) for model availability
+- **Cross-Region Inference:** Enabled (or willingness to enable) for model availability — the agent uses `auto` model selection which routes to the best available model across regions
+- **Default Warehouse per User:** CoWork requires each user to have a default warehouse set. See the optional section at the end of `01_SETUP_ENVIRONMENT.sql` to bulk-assign one
 
 ## Quick Start
 
-1. Open `SETUP.sql` in a Snowflake SQL worksheet
+1. Open `01_SETUP_ENVIRONMENT.sql` in a Snowflake SQL worksheet
 2. Run the script top-to-bottom (each section is self-contained and idempotent)
-3. The final query outputs your personalized CoWork URL and agent deep link
+3. Open `02_SETUP_AGENT.sql` in a Snowflake SQL worksheet
+4. Run the script top-to-bottom
+5. The final query outputs your personalized CoWork URL and agent deep link
 
 ## Script Sections
+
+### 01_SETUP_ENVIRONMENT.sql
 
 | Section | Purpose |
 |---------|---------|
 | **1. Configure Account & Create Database** | Validates cross-region inference, creates `SNOWFLAKE_DOCS_AGENT` database and `AGENTS` schema |
 | **2. Install Cortex Knowledge Extension** | Installs the Snowflake Documentation CKE from the Marketplace (listing `GZSTZ67BY9OQ4`) |
+| **Optional: Set Default Warehouse** | Diagnostic query and async script to set a default warehouse for users who don't have one |
+
+### 02_SETUP_AGENT.sql
+
+| Section | Purpose |
+|---------|---------|
 | **3. Create & Deploy Agent** | Creates the agent (if not exists), updates live version with full spec, commits as immutable version |
 | **3a. Grant Access & Validate** | Grants USAGE to PUBLIC, validates grants, inspects agent configuration |
 | **4. Add Agent to Snowflake CoWork** | Registers the agent with the CoWork object for UI visibility |
@@ -95,11 +123,11 @@ All grants target the `PUBLIC` role for account-wide access:
 
 ### Change the Agent Name
 
-Find and replace `SNOWFLAKE_DOCS_AGENT` throughout the script to use a different database name.
+Find and replace `SNOWFLAKE_DOCS_AGENT` throughout both scripts to use a different database name.
 
 ### Modify the Agent Persona
 
-Edit the `instructions.response` and `instructions.orchestration` YAML blocks in Section 3 to change the agent's behavior, response format, or guardrails.
+Edit the `instructions.response` and `instructions.orchestration` YAML blocks in Section 3 of `02_SETUP_AGENT.sql` to change the agent's behavior, response format, or guardrails.
 
 ### Restrict Access
 
@@ -111,7 +139,7 @@ GRANT USAGE ON AGENT AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT TO ROLE <YOUR_ROLE>;
 
 ## Accessing the Agent
 
-After running the script, access your agent at:
+After running both scripts, access your agent at:
 
 ```
 https://ai.snowflake.com/<org>/<account>/#/ai/chat/new?db=SNOWFLAKE_DOCS_AGENT&schema=AGENTS&agent=SNOWFLAKE_DOCUMENTATION_AGENT
@@ -119,7 +147,7 @@ https://ai.snowflake.com/<org>/<account>/#/ai/chat/new?db=SNOWFLAKE_DOCS_AGENT&s
 
 Or navigate to [ai.snowflake.com](https://ai.snowflake.com) and select **Snowflake Docs Agent** from the agent list.
 
-> **Note:** CoWork initializes sessions with the user's default role and warehouse. Ensure all users have these set before sharing the link.
+> **Note:** CoWork initializes sessions with the user's default role and warehouse. Ensure all users have these set before sharing the link. The optional section at the end of `01_SETUP_ENVIRONMENT.sql` can help set default warehouses for users who don't have one.
 
 ## Testing the Agent
 
@@ -207,6 +235,7 @@ ORDER BY count DESC;
 | "Agent already present" error | Safe to ignore -- the script handles this with exception handling |
 | "Role doesn't include access" on deep link | Ensure USAGE is granted on the database, schema, and agent to the user's role |
 | "Version 'live' not found" | Run `ALTER AGENT AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT ADD LIVE VERSION FROM LAST;` |
+| Users can't use CoWork | Ensure users have a default warehouse set (see optional section in `01_SETUP_ENVIRONMENT.sql`) |
 
 ## License
 
