@@ -142,6 +142,13 @@ Find and replace `SNOWFLAKE_DOCS_AGENT` throughout both scripts to use a differe
 
 Edit the `instructions.response` and `instructions.orchestration` YAML blocks in Section 3 of `02_SETUP_AGENT.sql` to change the agent's behavior, response format, or guardrails.
 
+Alternatively, once the agent is created (after running `02_SETUP_AGENT.sql`), you can edit it directly in the Snowsight UI:
+
+1. Navigate to **AI & ML > Agents** in the left navigation menu
+2. Select `SNOWFLAKE_DOCUMENTATION_AGENT`
+3. Edit the specification in the built-in editor
+4. Test the agent against the live version before committing
+
 ### Restrict Access
 
 Replace grants to `PUBLIC` with a specific role to limit who can use the agent:
