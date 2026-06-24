@@ -48,6 +48,19 @@ Two SQL scripts create a fully functional Cortex Agent named **Snowflake Docs Ag
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### What is a Cortex Knowledge Extension (CKE)?
+
+A **Cortex Knowledge Extension** is a pre-built, vectorized knowledge base published on the Snowflake Marketplace. It provides a ready-to-use [Cortex Search](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-search/cortex-search-overview) service that agents can query for RAG (Retrieval-Augmented Generation) without you needing to build ingestion pipelines, chunk documents, or manage embeddings.
+
+This project uses the **[Snowflake Documentation CKE](https://app.snowflake.com/marketplace/listing/GZSTZ67BY9OQ4/snowflake-snowflake-documentation)** (listing `GZSTZ67BY9OQ4`), which:
+
+- **Is free** — no credits charged for the shared data itself
+- **Auto-updates** — Snowflake maintains and refreshes the vectorized content as documentation changes
+- **Is read-only** — imported as a shared database; no write access to your account's data
+- **Provides a Cortex Search service** (`CKE_SNOWFLAKE_DOCS_SERVICE`) that the agent calls as its retrieval tool
+
+When the agent receives a question, it sends a search query to this service, retrieves the most relevant documentation chunks, and uses them to generate a grounded response. You never need to manage the underlying data — Snowflake handles ingestion, chunking, embedding, and indexing.
+
 ## Prerequisites & Permissions
 
 ### Required Roles
