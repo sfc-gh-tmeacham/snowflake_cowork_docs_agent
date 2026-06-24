@@ -4,6 +4,10 @@
 
 Deploy in under 5 minutes with two SQL scripts. No infrastructure to manage, no per-user setup, no ongoing maintenance.
 
+Choose your variant:
+- **02a** — Basic agent (docs search only)
+- **02b** — Agent with email tool (can email formatted answers to the user)
+
 > **New to Cortex Agents?** This is a great first agent to deploy. It's read-only (no access to your data), low risk (grounded exclusively in official docs), and immediately useful to every user in your organization. A safe way to demonstrate the value of Cortex Agents before building custom agents over your own data.
 
 ---
@@ -34,6 +38,7 @@ Two SQL scripts create a fully functional Cortex Agent named **Snowflake Docs Ag
 - Answers Snowflake questions using only official documentation (no hallucination)
 - Provides structured responses with code examples and access control details when relevant
 - Is accessible to all users in your account via Snowflake CoWork
+- **[02b only]** Offers to email the answer as a beautifully formatted HTML email to the current user
 
 ## Architecture
 
@@ -88,9 +93,13 @@ When the agent receives a question, it sends a search query to this service, ret
 
 1. Open `01_SETUP_ENVIRONMENT.sql` in a Snowflake SQL worksheet
 2. Run the script top-to-bottom (each section is self-contained and idempotent)
-3. Open `02_SETUP_AGENT.sql` in a Snowflake SQL worksheet
-4. Run the script top-to-bottom
+3. Choose your variant:
+   - **Basic:** Open `02a_SETUP_AGENT.sql` — agent with docs search only
+   - **With Email:** Open `02b_SETUP_AGENT_WITH_EMAIL.sql` — agent that can also email answers to users
+4. Run your chosen script top-to-bottom
 5. The final query outputs your personalized CoWork URL and agent deep link
+
+> **Note:** Run ONE of 02a or 02b — not both. They create the same agent with different tool configurations.
 
 ## Script Sections
 
@@ -102,7 +111,7 @@ When the agent receives a question, it sends a search query to this service, ret
 | **2. Install Cortex Knowledge Extension** | Installs the Snowflake Documentation CKE from the Marketplace (listing `GZSTZ67BY9OQ4`) |
 | **Optional: Set Default Warehouse** | Diagnostic query and async script to set a default warehouse for users who don't have one |
 
-### 02_SETUP_AGENT.sql
+### 02a_SETUP_AGENT.sql (Basic — no email tool)
 
 | Section | Purpose |
 |---------|---------|
@@ -111,6 +120,27 @@ When the agent receives a question, it sends a search query to this service, ret
 | **4. Add Agent to Snowflake CoWork** | Registers the agent with the CoWork object for UI visibility |
 | **Post-Execution** | Outputs account identifier, CoWork URL, and agent deep link |
 
+### 02b_SETUP_AGENT_WITH_EMAIL.sql (With email tool)
+
+| Section | Purpose |
+|---------|---------|
+| **1. Email Notification Integration** | Creates `DOCS_AGENT_EMAIL_INT` for sending HTML emails |
+| **2. Email Stored Procedure** | Creates `SEND_ANSWER_EMAIL` — converts markdown to styled HTML and sends via `SYSTEM$SEND_EMAIL` |
+| **3. Create & Deploy Agent** | Same as 02a but includes the `Send_Answer_Email` generic tool in the agent spec |
+| **4. Add Agent to Snowflake CoWork** | Registers the agent with the CoWork object for UI visibility |
+| **Post-Execution** | Outputs account identifier, CoWork URL, and agent deep link |
+
+### 99_TEARDOWN.sql (Cleanup)
+
+| Section | Purpose |
+|---------|---------|
+| **1. Remove from CoWork** | Unregisters the agent from CoWork |
+| **2. Drop Agent** | Removes the Cortex Agent object and all versions |
+| **3. Drop Email Objects** | Drops procedure and integration (safe if 02a was used — uses `IF EXISTS`) |
+| **4. Drop Agent Database** | Removes `SNOWFLAKE_DOCS_AGENT` and all contents |
+| **5. Marketplace Database** | Intentionally left in place (comment with manual drop command) |
+| **6. Revoke Grants (optional)** | Commented-out revoke of `CORTEX_AGENT_USER` (may be needed by other agents) |
+
 ## Objects Created
 
 | Object | Type | Description |
@@ -118,6 +148,8 @@ When the agent receives a question, it sends a search query to this service, ret
 | `SNOWFLAKE_DOCS_AGENT` | Database | Hosts the agent and its schema |
 | `SNOWFLAKE_DOCS_AGENT.AGENTS` | Schema | Contains the agent object |
 | `SNOWFLAKE_DOCS_AGENT.AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT` | Agent | The Snowflake Docs Agent |
+| `SNOWFLAKE_DOCS_AGENT.AGENTS.SEND_ANSWER_EMAIL` | Procedure | [02b only] Converts markdown to HTML email and sends it |
+| `DOCS_AGENT_EMAIL_INT` | Integration | [02b only] Email notification integration |
 | `SNOWFLAKE_DOCUMENTATION` | Database | Imported from Marketplace (read-only shared data) |
 | `SNOWFLAKE_INTELLIGENCE_OBJECT_DEFAULT` | Snowflake Intelligence | Account-level CoWork object for agent visibility |
 
@@ -129,8 +161,11 @@ All grants target the `PUBLIC` role for account-wide access:
 - `USAGE` on `SNOWFLAKE_DOCS_AGENT.AGENTS` (schema)
 - `IMPORTED PRIVILEGES` on `SNOWFLAKE_DOCUMENTATION`
 - `USAGE` on `SNOWFLAKE_DOCUMENTATION_AGENT` (agent)
+- `USAGE` on `SEND_ANSWER_EMAIL` (procedure) — [02b only]
 - `DATABASE ROLE SNOWFLAKE.CORTEX_AGENT_USER`
 - `USAGE` on `SNOWFLAKE_INTELLIGENCE_OBJECT_DEFAULT`
+
+> **Security note (02b):** The `DOCS_AGENT_EMAIL_INT` integration is intentionally NOT granted to PUBLIC. The procedure uses `EXECUTE AS OWNER` so only the procedure itself can access the integration — users cannot send emails directly.
 
 ## Customization
 
@@ -140,9 +175,9 @@ Find and replace `SNOWFLAKE_DOCS_AGENT` throughout both scripts to use a differe
 
 ### Modify the Agent Persona
 
-Edit the `instructions.response` and `instructions.orchestration` YAML blocks in Section 3 of `02_SETUP_AGENT.sql` to change the agent's behavior, response format, or guardrails.
+Edit the `instructions.response` and `instructions.orchestration` YAML blocks in Section 3 of your chosen 02 script to change the agent's behavior, response format, or guardrails.
 
-Alternatively, once the agent is created (after running `02_SETUP_AGENT.sql`), you can edit it directly in the Snowsight UI:
+Alternatively, once the agent is created (after running 02a or 02b), you can edit it directly in the Snowsight UI:
 
 1. Navigate to **AI & ML > Agents** in the left navigation menu
 2. Select `SNOWFLAKE_DOCUMENTATION_AGENT`
@@ -159,7 +194,7 @@ GRANT USAGE ON AGENT AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT TO ROLE <YOUR_ROLE>;
 
 ## Accessing the Agent
 
-After running both scripts, access your agent at:
+After running both scripts (01 + your choice of 02), access your agent at:
 
 ```
 https://ai.snowflake.com/<org>/<account>/#/ai/chat/new?db=SNOWFLAKE_DOCS_AGENT&schema=AGENTS&agent=SNOWFLAKE_DOCUMENTATION_AGENT
@@ -252,10 +287,12 @@ ORDER BY count DESC;
 |-------|----------|
 | Cross-region inference disabled | Run `ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';` |
 | Marketplace listing not available | Run `CALL SYSTEM$REQUEST_LISTING_AND_WAIT('GZSTZ67BY9OQ4', 0);` |
-| "Agent already present" error | Safe to ignore -- the script handles this with exception handling |
+| "Agent already present" error | Safe to ignore — the script handles this with exception handling |
 | "Role doesn't include access" on deep link | Ensure USAGE is granted on the database, schema, and agent to the user's role |
 | "Version 'live' not found" | Run `ALTER AGENT AGENTS.SNOWFLAKE_DOCUMENTATION_AGENT ADD LIVE VERSION FROM LAST;` |
 | Users can't use CoWork | Ensure users have a default warehouse set (see optional section in `01_SETUP_ENVIRONMENT.sql`) |
+| Email fails: "not verified" | The recipient must verify their email in Snowsight (Profile > Email Verification) |
+| Email fails: integration error | Ensure `DOCS_AGENT_EMAIL_INT` exists and the procedure owner has USAGE on it |
 
 ## License
 

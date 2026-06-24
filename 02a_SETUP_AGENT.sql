@@ -1,14 +1,16 @@
 /*
 ====================================================================================================
-File Name: 02_SETUP_AGENT.sql
+File Name: 02a_SETUP_AGENT.sql
 ====================================================================================================
 Author:      Tom Meacham
 Create Date: 2025-08-18
-Last Updated: 2026-06-23
-Version:     1.1
-Description: This script creates and deploys the "Snowflake Docs Agent" Cortex Agent, then
-             registers it with Snowflake CoWork for account-wide visibility. Run this script
-             after 01_SETUP_ENVIRONMENT.sql has completed successfully.
+Last Updated: 2026-06-24
+Version:     1.2
+Description: Creates and deploys the "Snowflake Docs Agent" Cortex Agent WITHOUT the email tool,
+             then registers it with Snowflake CoWork for account-wide visibility.
+
+             This is the BASIC variant. For the version WITH the email-answer tool, use
+             02b_SETUP_AGENT_WITH_EMAIL.sql instead. Run ONE of 02a or 02b — not both.
 
 Prerequisites:
   - 01_SETUP_ENVIRONMENT.sql has been executed successfully
