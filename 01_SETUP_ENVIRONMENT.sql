@@ -13,7 +13,10 @@ Description: This script sets up the foundational environment for the Snowflake 
 
 Prerequisites:
   - ACCOUNTADMIN role (or equivalent privileges)
-  - Access to the Snowflake Marketplace (org must have accepted marketplace terms)
+  - Access to the Snowflake Marketplace — your organization must have accepted the
+    Snowflake Provider and Consumer Terms of Service BEFORE running this script.
+    If not yet accepted, an ORGADMIN must do so first:
+    https://other-docs.snowflake.com/en/collaboration/consumer-becoming#accept-the-snowflake-provider-and-consumer-terms
   - A warehouse available for the executing user
   - Cross-region inference enabled (or willingness to enable it for model availability)
 
@@ -51,7 +54,7 @@ USE ROLE ACCOUNTADMIN;
 -- ║  SECTION 1: CONFIGURE ACCOUNT & CREATE AGENT DATABASE                        ║
 -- ╠══════════════════════════════════════════════════════════════════════════════╣
 -- ║  Purpose: Validate cross-region inference and create the database/schema     ║
--- ║           that will host the Snowflake Docs Agent.                            ║
+-- ║           that will host the Snowflake Docs Agent.                           ║
 -- ║                                                                              ║
 -- ║  Docs: https://docs.snowflake.com/en/user-guide/snowflake-cortex/snowflake-cowork
 -- ╚══════════════════════════════════════════════════════════════════════════════╝
